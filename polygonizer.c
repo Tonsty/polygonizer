@@ -85,6 +85,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 
+
 #define TET	0   /* use tetrahedral decomposition */
 #define NOTET 1 /* no tetrahedral decomposition  */
 
@@ -134,6 +135,15 @@ typedef struct vertices {	   /* list of vertices in polygonization */
     int count, max;		   /* # vertices, max # allowed */
     VERTEX *ptr;		   /* dynamically allocated */
 } VERTICES;
+
+typedef struct triangle {
+	int i1, i2, i3;
+} TRIANGLE;
+
+typedef struct triangles {
+	int count, max;
+	TRIANGLE *ptr;
+} TRIANGLES;
 
 typedef struct corner {		   /* corner of a cube */
     int i, j, k;		   /* (i, j, k) is index within lattice */
@@ -294,6 +304,9 @@ main ()
 
 int gntris;	     /* global needed by application */
 VERTICES gvertices;  /* global needed by application */
+int gply = 1;
+int glefthanded = 0;
+TRIANGLES gtriangles; /* global needed by application */
 
 
 /* triangle: called by polygonize() for each triangle; write to stdout */
@@ -304,8 +317,23 @@ VERTICES vertices;
 {
     gvertices = vertices;
     gntris++;
-    fprintf(stdout, "%d %d %d\n", i1, i2, i3);
+	if (glefthanded) fprintf(stdout, "%d %d %d\n", i1, i2, i3);
+	else fprintf(stdout, "%d %d %d\n", i1, i3, i2);
     return 1;
+}
+
+/* triangle2: called by polygonize() for each triangle; write to triangles buffer */
+
+triangle2 (i1, i2, i3, vertices)
+int i1, i2, i3;
+VERTICES vertices;
+{
+	TRIANGLE t = {i1, i2, i3};
+	if (!glefthanded) {int temp = t.i2; t.i2 = t.i3; t.i3 = temp;}
+	gvertices = vertices;
+	gntris++;
+	addtotriangles(&gtriangles, t);
+	return 1;
 }
 
 
@@ -317,21 +345,53 @@ main ()
     int i;
     char *err, *polygonize();
     gntris = 0;
-    fprintf(stdout, "triangles\n\n");
-    if ((err = polygonize(torus, .05, 20, 0.,0.,0., triangle, TET)) != NULL) {
-	fprintf(stdout, "%s\n", err);
-	exit(1);
+	if (!gply) {
+		fprintf(stdout, "triangles\n\n");
+		if ((err = polygonize(torus, .05, 20, 0.,0.,0., triangle, TET)) != NULL) {
+			fprintf(stdout, "%s\n", err);
+			exit(1);
+		}
+		fprintf(stdout, "\n%d triangles, %d vertices\n", gntris, gvertices.count);
+		fprintf(stdout, "\nvertices\n\n");
+		for (i = 0; i < gvertices.count; i++) {
+			VERTEX v;
+			v = gvertices.ptr[i];
+			fprintf(stdout, "%f  %f	 %f\t%f	 %f  %f\n",
+				v.position.x, v.position.y,	 v.position.z,
+				v.normal.x,	  v.normal.y,	 v.normal.z);
+		}
+	} else {
+		fprintf(stdout, "ply\n");
+		fprintf(stdout, "format ascii 1.0\n");
+		fprintf(stdout, "comment polygonizer generated\n");
+		if ((err = polygonize(torus, .1, 10, 0.,0.,0., triangle2, TET)) != NULL) {
+			fprintf(stdout, "%s\n", err);
+			exit(1);
+		}
+		fprintf(stdout, "element vertex %d\n", gvertices.count);
+		fprintf(stdout, "property float x\n"); 
+		fprintf(stdout, "property float y\n");
+		fprintf(stdout, "property float z\n");
+		fprintf(stdout, "property float nx\n"); 
+		fprintf(stdout, "property float ny\n");
+		fprintf(stdout, "property float nz\n");
+		fprintf(stdout, "element face %d\n", gntris);
+		fprintf(stdout, "property list uchar int vertex_indices\n");
+		fprintf(stdout, "end_header\n");
+		for (i = 0; i < gvertices.count; i++) {
+			VERTEX v;
+			v = gvertices.ptr[i];
+			fprintf(stdout, "%f %f %f %f %f %f\n",
+				v.position.x, v.position.y,	 v.position.z,
+				v.normal.x,	  v.normal.y,	 v.normal.z);
+		}
+		for (i = 0; i < gtriangles.count; i++) {
+			TRIANGLE t;
+			t = gtriangles.ptr[i];
+			fprintf(stdout, "3 %d %d %d\n", t.i1, t.i2, t.i3);
+		}
 	}
-    fprintf(stdout, "\n%d triangles, %d vertices\n", gntris, gvertices.count);
-    fprintf(stdout, "\nvertices\n\n");
-    for (i = 0; i < gvertices.count; i++) {
-	VERTEX v;
-	v = gvertices.ptr[i];
-	fprintf(stdout, "%f  %f	 %f\t%f	 %f  %f\n",
-	    v.position.x, v.position.y,	 v.position.z,
-	    v.normal.x,	  v.normal.y,	 v.normal.z);
-    }
-    fprintf(stderr, "%d triangles, %d vertices\n", gntris, gvertices.count);
+	fprintf(stderr, "%d triangles, %d vertices\n", gntris, gvertices.count);
     exit(0);
 }
 
@@ -568,28 +628,28 @@ PROCESS *p;
     if (bpos != dpos) e5 = vertid(b, d, p);
     if (cpos != dpos) e6 = vertid(c, d, p);
     /* 14 productive tetrahedral cases (0000 and 1111 do not yield polygons */
-    switch (index) {
+	switch (index) {
 	case 1:	 return p->triproc(e5, e6, e3, p->vertices);
 	case 2:	 return p->triproc(e2, e6, e4, p->vertices);
 	case 3:	 return p->triproc(e3, e5, e4, p->vertices) &&
-			p->triproc(e3, e4, e2, p->vertices);
+					p->triproc(e3, e4, e2, p->vertices);
 	case 4:	 return p->triproc(e1, e4, e5, p->vertices);
 	case 5:	 return p->triproc(e3, e1, e4, p->vertices) &&
-			p->triproc(e3, e4, e6, p->vertices);
+					p->triproc(e3, e4, e6, p->vertices);
 	case 6:	 return p->triproc(e1, e2, e6, p->vertices) &&
-			p->triproc(e1, e6, e5, p->vertices);
+					p->triproc(e1, e6, e5, p->vertices);
 	case 7:	 return p->triproc(e1, e2, e3, p->vertices);
 	case 8:	 return p->triproc(e1, e3, e2, p->vertices);
 	case 9:	 return p->triproc(e1, e5, e6, p->vertices) &&
-			p->triproc(e1, e6, e2, p->vertices);
+					p->triproc(e1, e6, e2, p->vertices);
 	case 10: return p->triproc(e1, e3, e6, p->vertices) &&
-			p->triproc(e1, e6, e4, p->vertices);
+					p->triproc(e1, e6, e4, p->vertices);
 	case 11: return p->triproc(e1, e5, e4, p->vertices);
 	case 12: return p->triproc(e3, e2, e4, p->vertices) &&
-			p->triproc(e3, e4, e5, p->vertices);
+					p->triproc(e3, e4, e5, p->vertices);
 	case 13: return p->triproc(e6, e2, e4, p->vertices);
 	case 14: return p->triproc(e5, e3, e6, p->vertices);
-    }
+	}
     return 1;
 }
 
@@ -828,6 +888,26 @@ VERTEX v;
 	vertices->ptr = new;
     }
     vertices->ptr[vertices->count++] = v;
+}
+
+
+/* addtotriangles: add t to sequence of triangles */
+
+addtotriangles (triangles, t)
+TRIANGLES *triangles;
+TRIANGLE t;
+{
+	if (triangles->count == triangles->max) {
+		int i;
+		TRIANGLE *new;
+		triangles->max = triangles->count == 0 ? 10 : 2*triangles->count;
+		new = (TRIANGLE *) mycalloc(triangles->max, sizeof(TRIANGLE));
+		for (i = 0; i < triangles->count; i++) new[i] = triangles->ptr[i];
+		if (triangles->ptr != NULL) free((char *) triangles->ptr);
+		triangles->ptr = new;
+	}
+	triangles->ptr[triangles->count++] = t;
+	return 1;
 }
 
 
