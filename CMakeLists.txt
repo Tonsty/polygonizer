@@ -4,7 +4,7 @@ project(polygonizer)
 
 if(CMAKE_HOST_UNIX)
 	# Set a default build type if none was specified
-	if(not CMAKE_BUILD_TYPE and not CMAKE_CONFIGURATION_TYPES)
+	if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 	  message(STATUS "Setting build type to 'Debug' as none was specified.")
 	  set(CMAKE_BUILD_TYPE Debug CACHE STRING "Choose the type of build." FORCE)
 	  # Set the possible values of build type for cmake-gui
@@ -14,6 +14,10 @@ if(CMAKE_HOST_UNIX)
 endif()
 
 add_executable(polygonizer polygonizer.c)
+
+if(CMAKE_HOST_UNIX)
+	target_link_libraries(polygonizer -lm)
+endif()
 
 
 
